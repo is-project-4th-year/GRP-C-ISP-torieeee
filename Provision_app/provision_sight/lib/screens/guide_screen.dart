@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:hive/hive.dart';
 import '../services/online_processor.dart';
 import '../services/offline_processor.dart';
+import '../services/vision_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 class TextToSpeech {
@@ -67,11 +68,10 @@ class _GuideScreenState extends State<GuideScreen> {
   }
 
   Future<void> _processOffline() async {
-    // Use local computer vision
-    final image = await _cameraController.takePicture();
-    final description = await OfflineProcessor.analyzeImage(image.path);
-    
-    await TextToSpeech.speak(description);
+  // Use local computer vision
+  final image = await _cameraController.takePicture();
+  final description = await VisionService.analyzeImage(image.path);
+  await TextToSpeech.speak(description);
   }
 
   @override

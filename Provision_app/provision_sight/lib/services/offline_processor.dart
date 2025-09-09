@@ -1,122 +1,231 @@
 // services/offline_processor.dart
-import 'dart:io';
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:image/image.dart' as img;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:camera/camera.dart';
+import 'package:image/image.dart' as img;
+import 'dart:io';
+import 'vision_service.dart';
 
 class OfflineProcessor {
   static final FlutterTts _tts = FlutterTts();
-  static Interpreter? _interpreter;
-  static List<String> _labels = [];
+  static bool _isProcessing = false;
+  static bool _isContinuousMode = false;
 
+  // Initialize offline processing system
   static Future<void> initialize() async {
     try {
-      // Load TFLite model (you'll need to add these files to your assets)
-      _interpreter = await Interpreter.fromAsset('models/object_detection.tflite');
-      
-      // Load labels
-      String labelContent = await File('assets/models/labels.txt').readAsString();
-      _labels = labelContent.split('\n');
-      
+      await VisionService.initialize();
+      await _tts.awaitSpeakCompletion(true);
+      print("Offline processor initialized");
     } catch (e) {
-      print("Failed to initialize offline processor: $e");
+      print("Offline processor initialization failed: $e");
+      throw Exception("Offline vision system unavailable");
     }
   }
 
-  static Future<String> analyzeImage(String imagePath) async {
+  // Process image from file
+  static Future<void> processImage(String imagePath) async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
     try {
-      if (_interpreter == null) {
-        await initialize();
-      }
-
-      // Preprocess image
-      List<List<List<List<double>>>> input = await _preprocessImage(imagePath);
-      
-      // Run inference
-      var output = List.filled(1, List.filled(10, List.filled(10, List.filled(4, 0.0))));
-      _interpreter!.run(input, output);
-      
-      // Process results
-      String description = _processDetectionResults(output[0]);
-      
-      // Add distance estimation
-      String distanceInfo = await _estimateDistances(imagePath);
-      
-      await _tts.speak("$description $distanceInfo");
-      
-      return "$description $distanceInfo";
+      final description = await VisionService.analyzeImage(imagePath);
+      await _tts.speak(description);
     } catch (e) {
-      await _tts.speak("Offline processing unavailable. Please switch to online mode.");
-      return "Processing error: $e";
+      await _tts.speak("Sorry, I couldn't process the image. Please try again.");
+    } finally {
+      _isProcessing = false;
     }
   }
 
-  static Future<List<List<List<List<double>>>>> _preprocessImage(String imagePath) async {
-    // Load and preprocess image for the model
-    img.Image image = img.decodeImage(File(imagePath).readAsBytesSync())!;
-    img.Image resized = img.copyResize(image, width: 224, height: 224);
-    
-    // Convert to normalized float array
-    List<List<List<List<double>>>> input = List.generate(
-      1, 
-      (_) => List.generate(
-        224, 
-        (i) => List.generate(
-          224, 
-          (j) => List.generate(
-            3, 
-            (k) {
-              int pixel = resized.getPixel(j, i);
-              // Extract RGB channels
-              if (k == 0) return img.getRed(pixel) / 255.0;
-              if (k == 1) return img.getGreen(pixel) / 255.0;
-              return img.getBlue(pixel) / 255.0;
-            }
-          )
-        )
-      )
-    );
-    
-    return input;
-  }
+  // Process camera frame - REAL IMPLEMENTATION
+  static Future<void> processCameraFrame(CameraImage cameraImage) async {
+    if (_isProcessing) return;
+    _isProcessing = true;
 
-  static String _processDetectionResults(List<List<List<double>>> results) {
-    // Process detection results and create description
-    List<String> detectedObjects = [];
-    
-    for (var detection in results) {
-      double confidence = detection[0][0];
-      if (confidence > 0.5) { // Confidence threshold
-        int classId = detection[0][1].toInt();
-        if (classId < _labels.length) {
-          detectedObjects.add(_labels[classId]);
-        }
-      }
-    }
-    
-    if (detectedObjects.isEmpty) {
-      return "No objects detected in your surroundings.";
-    }
-    
-    return "I can see: ${detectedObjects.join(', ')}.";
-  }
-
-  static Future<String> _estimateDistances(String imagePath) async {
-    // Simple distance estimation (placeholder - you'd implement MiDAS here)
-    // For now, using a simple heuristic based on object size
-    return "Objects are approximately 2 to 5 meters away. Please proceed carefully.";
-  }
-
-  static Future<String> analyzeCameraFrame(List<int> imageBytes) async {
-    // Alternative method for direct camera frame analysis
     try {
-      // Save temporary image
-      String tempPath = '/tmp/frame_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await File(tempPath).writeAsBytes(imageBytes);
+      // Convert CameraImage to a format MediaPipe can process
+      final imageFile = await _convertCameraImageToFile(cameraImage);
+      final description = await VisionService.analyzeImage(imageFile.path);
       
-      return await analyzeImage(tempPath);
+      await _tts.speak(description);
+      
+      // Clean up temporary file
+      await imageFile.delete();
     } catch (e) {
-      return "Frame analysis error: $e";
+      print("Camera frame processing error: $e");
+      await _tts.speak("Vision processing temporarily unavailable.");
+    } finally {
+      _isProcessing = false;
     }
   }
+
+  // Convert CameraImage to File - REAL IMPLEMENTATION
+  static Future<File> _convertCameraImageToFile(CameraImage cameraImage) async {
+    try {
+      final tempDir = Directory.systemTemp;
+      final tempFile = File('${tempDir.path}/frame_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      
+      // Convert based on image format
+      img.Image image;
+      
+      if (cameraImage.format.group == ImageFormatGroup.yuv420) {
+        image = _convertYUV420ToImage(cameraImage);
+      } else if (cameraImage.format.group == ImageFormatGroup.bgra8888) {
+        image = _convertBGRA8888ToImage(cameraImage);
+      } else {
+        throw Exception('Unsupported image format: ${cameraImage.format}');
+      }
+      
+      // Save as JPEG
+      final jpegBytes = img.encodeJpg(image);
+      await tempFile.writeAsBytes(jpegBytes);
+      
+      return tempFile;
+    } catch (e) {
+      print("Image conversion error: $e");
+      throw Exception("Failed to process camera image: $e");
+    }
+  }
+
+  // Convert YUV420 to Image
+  static img.Image _convertYUV420ToImage(CameraImage cameraImage) {
+    final width = cameraImage.width;
+    final height = cameraImage.height;
+    
+    final yBuffer = cameraImage.planes[0].bytes;
+    final uBuffer = cameraImage.planes[1].bytes;
+    final vBuffer = cameraImage.planes[2].bytes;
+    
+    final image = img.Image(width, height);
+    
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        final yIndex = y * width + x;
+        final uvIndex = (y ~/ 2) * (width ~/ 2) + (x ~/ 2);
+        
+        final yValue = yBuffer[yIndex];
+        final uValue = uBuffer[uvIndex];
+        final vValue = vBuffer[uvIndex];
+        
+        // Convert YUV to RGB
+        final r = _yuvToR(yValue, uValue, vValue);
+        final g = _yuvToG(yValue, uValue, vValue);
+        final b = _yuvToB(yValue, uValue, vValue);
+        
+        image.setPixelRgba(x, y, r, g, b);
+      }
+    }
+    
+    return image;
+  }
+
+  // Convert BGRA8888 to Image
+  static img.Image _convertBGRA8888ToImage(CameraImage cameraImage) {
+    final width = cameraImage.width;
+    final height = cameraImage.height;
+    final bytes = cameraImage.planes[0].bytes;
+    
+    final image = img.Image(width, height);
+    
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        final index = (y * width + x) * 4;
+        final b = bytes[index];
+        final g = bytes[index + 1];
+        final r = bytes[index + 2];
+        // final a = bytes[index + 3]; // Alpha channel, not used
+        
+        image.setPixelRgba(x, y, r, g, b);
+      }
+    }
+    
+    return image;
+  }
+
+  // YUV to RGB conversion helpers
+  static int _yuvToR(int y, int u, int v) {
+    final r = (y + 1.402 * (v - 128)).clamp(0, 255).toInt();
+    return r;
+  }
+
+  static int _yuvToG(int y, int u, int v) {
+    final g = (y - 0.344 * (u - 128) - 0.714 * (v - 128)).clamp(0, 255).toInt();
+    return g;
+  }
+
+  static int _yuvToB(int y, int u, int v) {
+    final b = (y + 1.772 * (u - 128)).clamp(0, 255).toInt();
+    return b;
+  }
+
+  // Continuous guidance mode - REAL IMPLEMENTATION
+  static Future<void> startContinuousGuidance(CameraController cameraController) async {
+    _isContinuousMode = true;
+    
+    await _tts.speak("Starting continuous spatial guidance. I will describe your surroundings every 10 seconds.");
+
+    while (_isContinuousMode && !_isProcessing) {
+      try {
+        // Capture frame from camera
+        final image = await cameraController.takePicture();
+        
+        // Process the image
+        _isProcessing = true;
+        final description = await VisionService.analyzeImage(image.path);
+        await _tts.speak(description);
+        
+        // Delete temporary image file
+        await File(image.path).delete();
+        
+        _isProcessing = false;
+        
+        // Wait before next capture
+        await Future.delayed(Duration(seconds: 10));
+      } catch (e) {
+        print("Continuous guidance error: $e");
+        _isProcessing = false;
+        await Future.delayed(Duration(seconds: 2));
+      }
+    }
+  }
+
+  // Stop continuous guidance
+  static void stopContinuousGuidance() {
+    _isContinuousMode = false;
+  }
+
+  // Process single frame from camera controller
+  static Future<void> processSingleFrame(CameraController cameraController) async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
+    try {
+      final image = await cameraController.takePicture();
+      await processImage(image.path);
+      
+      // Clean up
+      await File(image.path).delete();
+    } catch (e) {
+      await _tts.speak("Failed to capture image. Please try again.");
+    } finally {
+      _isProcessing = false;
+    }
+  }
+
+  // Stop processing
+  static void stopProcessing() {
+    _isProcessing = false;
+    _isContinuousMode = false;
+    VisionService.dispose();
+  }
+
+  // Get system status
+  static String getStatus() {
+    if (_isContinuousMode) return "Continuous Guidance";
+    return _isProcessing ? "Processing" : "Ready";
+  }
+
+  // Check if system is busy
+  static bool get isProcessing => _isProcessing;
+  static bool get isContinuousMode => _isContinuousMode;
 }
