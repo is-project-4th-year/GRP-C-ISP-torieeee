@@ -1,0 +1,1 @@
+Spatial analysis not available - SpatialLM not found
