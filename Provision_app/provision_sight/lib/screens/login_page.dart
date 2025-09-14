@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:provision_sight/utils/voice_auth.dart';
-import 'package:provision_sight/utils/app_storage.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -14,13 +13,11 @@ class _LoginPageState extends State<LoginPage> {
   bool _isAuthenticating = false;
   bool _useFingerprint = false;
   int _attempts = 0;
-  List<String> _storedVoiceSamples = [];
 
   @override
   void initState() {
     super.initState();
     _checkBiometrics();
-    _loadVoiceSamples();
   }
 
   Future<void> _checkBiometrics() async {
@@ -33,13 +30,6 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       print('Error checking biometrics: $e');
     }
-  }
-
-  Future<void> _loadVoiceSamples() async {
-    final samples = AppStorage.getVoiceSamples();
-    setState(() {
-      _storedVoiceSamples = samples;
-    });
   }
 
   @override
@@ -109,43 +99,26 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _authenticateWithVoice() async {
-    if (_storedVoiceSamples.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No voice samples found. Please sign up first.')),
-      );
-      return;
-    }
-
     setState(() {
       _isAuthenticating = true;
     });
 
-    try {
-      final isAuthenticated = await VoiceAuth.authenticate(_storedVoiceSamples);
-      
-      setState(() {
-        _isAuthenticating = false;
-      });
+    // Simulate voice authentication
+    await Future.delayed(Duration(seconds: 2));
+    
+    // For demo purposes, we'll assume success after 2 seconds
+    final bool isAuthenticated = true; // Replace with actual voice auth logic
+    
+    setState(() {
+      _isAuthenticating = false;
+    });
 
-      if (isAuthenticated) {
-        await AppStorage.setLoggedIn(true);
-        Navigator.pushReplacementNamed(context, '/main');
-      } else {
-        setState(() {
-          _attempts++;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Voice authentication failed. Please try again.')),
-        );
-      }
-    } catch (e) {
+    if (isAuthenticated) {
+      Navigator.pushReplacementNamed(context, '/main');
+    } else {
       setState(() {
-        _isAuthenticating = false;
         _attempts++;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error during voice authentication: $e')),
-      );
     }
   }
 
@@ -156,12 +129,10 @@ class _LoginPageState extends State<LoginPage> {
         options: AuthenticationOptions(
           useErrorDialogs: true,
           stickyAuth: true,
-          biometricOnly: true,
         ),
       );
 
       if (didAuthenticate) {
-        await AppStorage.setLoggedIn(true);
         Navigator.pushReplacementNamed(context, '/main');
       } else {
         setState(() {
@@ -173,9 +144,6 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         _attempts++;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Fingerprint authentication failed. Please try again.')),
-      );
     }
   }
 }

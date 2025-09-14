@@ -96,7 +96,7 @@ class OfflineProcessor {
     final uBuffer = cameraImage.planes[1].bytes;
     final vBuffer = cameraImage.planes[2].bytes;
     
-    final image = img.Image(width, height);
+    final image = img.Image(width: width, height: height);
     
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
@@ -112,7 +112,7 @@ class OfflineProcessor {
         final g = _yuvToG(yValue, uValue, vValue);
         final b = _yuvToB(yValue, uValue, vValue);
         
-        image.setPixelRgba(x, y, r, g, b);
+        image.setPixelRgba(x, y, r, g, b, 255);
       }
     }
     
@@ -125,7 +125,7 @@ class OfflineProcessor {
     final height = cameraImage.height;
     final bytes = cameraImage.planes[0].bytes;
     
-    final image = img.Image(width, height);
+    final image = img.Image(width: width, height: height);
     
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
@@ -135,7 +135,7 @@ class OfflineProcessor {
         final r = bytes[index + 2];
         // final a = bytes[index + 3]; // Alpha channel, not used
         
-        image.setPixelRgba(x, y, r, g, b);
+        image.setPixelRgba(x, y, r, g, b, 255);
       }
     }
     
