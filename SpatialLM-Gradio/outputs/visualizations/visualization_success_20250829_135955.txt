@@ -1,0 +1,4 @@
+Visualization completed: outputs/pcd/frame_20250829_134926.pcd
+Points: 353176
+Objects detected: 23
+Timestamp: 20250829_135955
