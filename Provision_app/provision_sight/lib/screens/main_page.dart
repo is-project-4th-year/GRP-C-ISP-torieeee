@@ -1,6 +1,6 @@
 // screens/main_page.dart
 import 'package:flutter/material.dart';
-import 'package:provision_sight/utils/voice_commands.dart';
+import 'package:provision_sight/services/voice_service.dart';
 
 class MainPage extends StatefulWidget {
   @override
@@ -19,50 +19,55 @@ class _MainPageState extends State<MainPage> {
   }
 
   void _startVoiceListener() async {
-    VoiceCommands.listen((command) {
-      setState(() {
-        _lastCommand = command;
-        _isListening = false;
-      });
-      
-      _handleVoiceCommand(command);
-      
-      // Restart listening after a short delay
-      Future.delayed(Duration(seconds: 1), () {
-        if (mounted) {
-          setState(() {
-            _isListening = true;
-          });
-        }
-      });
-    });
-    
-    setState(() {
-      _isListening = true;
-    });
-  }
+  // Small delay to let UI settle
+  await Future.delayed(Duration(milliseconds: 500));
 
-  void _handleVoiceCommand(String command) {
-    switch (command) {
-      case 'guide':
-        Navigator.pushNamed(context, '/guide');
-        break;
-      case 'activate':
-        // Handle activate command
-        break;
-      case 'help':
-        _handleEmergency();
-        break;
-      case 'assist':
-        // Handle assist command
-        break;
-      default:
-        print('Unknown command: $command');
-    }
+  VoiceService.speak(
+    "Welcome to your main page! "
+    "You can say: "
+    "'guide' for navigation assistance, "
+    "'help' for emergency, "
+    "'profile' to view your information, "
+    "or 'emergency' to view your contact. "
+    "What would you like to do?"
+  );
+
+  VoiceService.startListening((command) {
+    setState(() {
+      _lastCommand = command;
+    });
+    _handleVoiceCommand(command);
+  });
+
+  setState(() {
+    _isListening = true;
+  });
+}
+
+void _handleVoiceCommand(String command) {
+  command = command.toLowerCase();
+  
+  if (command.contains("guide")) {
+    VoiceService.speak("Opening guide page.");
+    Navigator.pushNamed(context, '/guide');
+  } else if (command.contains("help")) {
+    VoiceService.speak("Initiating emergency protocol.");
+    _handleEmergency();
+  } else if (command.contains("profile")) {
+    VoiceService.speak("Opening your profile.");
+    Navigator.pushNamed(context, '/profile');
+  } else if (command.contains("emergency") || command.contains("contact")) {
+    VoiceService.speak("Opening emergency contact information.");
+    Navigator.pushNamed(context, '/emergency');
+  } else if (command.contains("assist") || command.contains("help info")) {
+    VoiceService.speak("Showing help information.");
+    _showHelpDialog();
+  } else {
+    VoiceService.speak("I didn't understand. You can say 'guide', 'help', 'profile', or 'emergency'.");
   }
+}
 
   void _handleEmergency() {
-    // Implement emergency handling
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -76,9 +81,36 @@ class _MainPageState extends State<MainPage> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Implement emergency call
+              VoiceService.speak("Emergency call initiated.");
+              // TODO: Implement actual call
             },
             child: Text('Call'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Voice Commands'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('• Say "guide" for navigation assistance'),
+            Text('• Say "help" for emergency assistance'),
+            Text('• Say "profile" to view your profile'),
+            Text('• Say "emergency" to view emergency contact'),
+            Text('• Say "assist" for help information'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
           ),
         ],
       ),
@@ -169,31 +201,7 @@ class _MainPageState extends State<MainPage> {
                 _buildFeatureButton(
                   icon: Icons.help,
                   label: 'Help Info',
-                  onTap: () {
-                    // Show help information
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: Text('Voice Commands'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('• Say "guide" for navigation assistance'),
-                            Text('• Say "activate" for...'),
-                            Text('• Say "help" for emergency assistance'),
-                            Text('• Say "assist" for...'),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                  onTap: _showHelpDialog,
                 ),
               ],
             ),
@@ -229,7 +237,7 @@ class _MainPageState extends State<MainPage> {
 
   @override
   void dispose() {
-    VoiceCommands.stopListening();
+    VoiceService.stopListening();
     super.dispose();
   }
 }

@@ -1002,6 +1002,8 @@ import 'package:provision_sight/utils/voice_auth.dart';
 import 'package:provision_sight/models/UserModel.dart';
 import 'package:provision_sight/utils/app_storage.dart';
 import 'package:provision_sight/services/voice_service.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:provision_sight/utils/voice_navigator.dart';
 
 class SignupPage extends StatefulWidget {
   @override
@@ -1024,12 +1026,182 @@ class _SignupPageState extends State<SignupPage> {
   bool _useVoiceInput = false;
   List<String> _voiceSamples = [];
 
+  late VoiceNavigator _voiceNav;
+  bool _isInVoiceMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceNav = VoiceNavigator();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _askIfVoiceGuided();
+    });
+  }
+   @override
+  void dispose() {
+    _voiceNav.dispose();
+    super.dispose();
+  }
+
+  void _askIfVoiceGuided() async {
+    await _voiceNav.speak("Would you like me to guide you through signup using voice? Say 'yes' or 'no'.");
+    final response = await _voiceNav.listenForCommand();
+    if (response.toLowerCase().contains("yes")) {
+      setState(() => _isInVoiceMode = true);
+      _startVoiceGuidedSignup();
+    } else {
+      await _voiceNav.speak("Okay, you can fill the form manually. Tap any field's mic icon to use voice input.");
+    }
+  }
+  Future<void> _waitForVoiceSamples() async {
+  // Wait until 5 samples are recorded
+  while (_voiceSamples.length < 5) {
+    await Future.delayed(Duration(seconds: 1));
+    if (!mounted) return;
+  }
+}
+
+Future<void> _submitFormWithVoice() async {
+  if (_formKey.currentState!.validate() && _voiceSamples.length >= 5) {
+    try {
+      // Create user object
+      final user = User(
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        phone: _phoneController.text,
+        email: _emailController.text,
+        emergencyContact: EmergencyContact(
+          name: _emergencyNameController.text,
+          phone: _emergencyPhoneController.text,
+          email: _emergencyEmailController.text,
+          relationship: _relationshipController.text,
+        ),
+        voiceSamples: _voiceSamples,
+      );
+
+      // Save user data and voice samples
+      await AppStorage.saveUser(user);
+      await AppStorage.saveVoiceSamples(_voiceSamples);
+      await AppStorage.setLoggedIn(true);
+
+      // Fingerprint enrollment
+      try {
+        final localAuth = LocalAuthentication();
+        final canCheck = await localAuth.canCheckBiometrics;
+        final hasFingerprint = await localAuth.isDeviceSupported();
+
+        if (canCheck && hasFingerprint) {
+          final didAuthenticate = await localAuth.authenticate(
+            localizedReason: 'Enroll fingerprint for faster future logins',
+          );
+          if (didAuthenticate) {
+            await AppStorage.saveFingerprintEnrolled(true);
+            print('✅ Fingerprint enrolled successfully');
+          } else {
+            print('ℹ️ Fingerprint enrollment skipped by user');
+          }
+        }
+      } catch (e) {
+        print('Fingerprint enrollment skipped or failed: $e');
+      }
+
+      await _voiceNav.speak("Signup complete! Taking you to the main page now.");
+
+      // Navigate to main page
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/main');
+      });
+
+    } catch (e) {
+      await _voiceNav.speak("Error saving user data: $e");
+    }
+  } else {
+    await _voiceNav.speak("Please make sure all fields are filled and you've recorded 5 voice samples.");
+  }
+}
+
+  Future<void> _startVoiceGuidedSignup() async {
+  // Personal Info
+  _firstNameController.text = await _voiceNav.listenForField("first name");
+  if (_firstNameController.text.isEmpty) return;
+
+  _lastNameController.text = await _voiceNav.listenForField("last name");
+  if (_lastNameController.text.isEmpty) return;
+
+  _phoneController.text = await _voiceNav.listenForField("phone number");
+  if (_phoneController.text.isEmpty) return;
+
+  _emailController.text = await _voiceNav.listenForField("email address");
+  if (_emailController.text.isEmpty) return;
+
+  // Emergency Contact
+  await _voiceNav.speak("Now, let's set up your emergency contact.");
+
+  _emergencyNameController.text = await _voiceNav.listenForField("emergency contact's name");
+  if (_emergencyNameController.text.isEmpty) return;
+
+  _emergencyPhoneController.text = await _voiceNav.listenForField("emergency contact's phone number");
+  if (_emergencyPhoneController.text.isEmpty) return;
+
+  _emergencyEmailController.text = await _voiceNav.listenForField("emergency contact's email");
+  if (_emergencyEmailController.text.isEmpty) return;
+
+  _relationshipController.text = await _voiceNav.listenForField("your relationship to this contact");
+  if (_relationshipController.text.isEmpty) return;
+
+  // ➡️ STEP 1: REVIEW USER INPUT
+  await _voiceNav.speak(
+    "Let me read back your information. "
+    "Your name is ${_firstNameController.text} ${_lastNameController.text}. "
+    "Your phone is ${_phoneController.text}. "
+    "Your email is ${_emailController.text}. "
+    "Your emergency contact is ${_emergencyNameController.text}, "
+    "phone ${_emergencyPhoneController.text}, "
+    "relationship ${_relationshipController.text}. "
+    "Is this correct? Say 'yes' to confirm or 'no' to start over."
+  );
+
+  final reviewConfirm = await _voiceNav.listenForCommand();
+  if (!reviewConfirm.toLowerCase().contains("yes")) {
+    await _voiceNav.speak("Okay, let's start over.");
+    _startVoiceGuidedSignup(); // Restart
+    return;
+  }
+
+  await _voiceNav.speak("Great! Now please record 5 voice samples by tapping the 'Record Voice Sample' button.");
+
+  // Wait until samples are recorded (we'll auto-detect via state)
+  await _waitForVoiceSamples();
+
+  // ➡️ STEP 2: CONFIRM COMPLETION
+  await _voiceNav.speak("You've recorded all 5 voice samples. Would you like to complete signup now? Say 'yes' or 'no'.");
+
+  final finalConfirm = await _voiceNav.listenForCommand();
+  if (finalConfirm.toLowerCase().contains("yes")) {
+    await _submitFormWithVoice();
+  } else {
+    await _voiceNav.speak("Okay, you can complete signup later by tapping the 'Complete Sign Up' button.");
+  }
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Sign Up'),
         backgroundColor: Color(0xFF1B5E20),
+        actions: [
+          if (_isInVoiceMode)
+            IconButton(
+              icon: Icon(Icons.stop),
+              onPressed: () {
+                _voiceNav.stop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Voice guidance stopped.")),
+                );
+              },
+              ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
@@ -1049,7 +1221,7 @@ class _SignupPageState extends State<SignupPage> {
                 isVoice: _useVoiceInput,
               ),
               SizedBox(height: 15),
-              _buildInputField(
+_buildInputField(
                 controller: _lastNameController,
                 label: 'Last Name',
                 isVoice: _useVoiceInput,
@@ -1134,7 +1306,7 @@ class _SignupPageState extends State<SignupPage> {
                 '$_voiceSamplesRecorded/5 samples recorded',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white70),
-              ),
+                ),
               SizedBox(height: 15),
               ElevatedButton.icon(
                 onPressed: _isRecording ? null : _recordVoiceSample,
@@ -1275,6 +1447,26 @@ void _recordVoiceSample() async {
         await AppStorage.saveUser(user);
         await AppStorage.saveVoiceSamples(_voiceSamples);
         await AppStorage.setLoggedIn(true);
+
+        try {
+        final localAuth = LocalAuthentication();
+        final canCheck = await localAuth.canCheckBiometrics;
+        final hasFingerprint = await localAuth.isDeviceSupported();
+
+        if (canCheck && hasFingerprint) {
+          final didAuthenticate = await localAuth.authenticate(
+            localizedReason: 'Enroll fingerprint for faster future logins',
+          );
+          if (didAuthenticate) {
+            await AppStorage.saveFingerprintEnrolled(true);
+            print('✅ Fingerprint enrolled successfully');
+          } else {
+            print('ℹ️ Fingerprint enrollment skipped by user');
+          }
+        }
+      } catch (e) {
+        print('Fingerprint enrollment skipped or failed: $e');
+      }
 
         // Navigate to main page
         Navigator.pushReplacementNamed(context, '/main');

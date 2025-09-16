@@ -1,5 +1,7 @@
 // screens/profile_page.dart
 import 'package:flutter/material.dart';
+import 'package:provision_sight/utils/app_storage.dart';
+import 'package:provision_sight/models/UserModel.dart';
 
 class ProfilePage extends StatefulWidget {
   @override
@@ -12,19 +14,30 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
 
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    // Load user data (in a real app, this would come from a database)
     _loadUserData();
   }
 
-  void _loadUserData() {
-    // Placeholder for loading user data
-    _firstNameController.text = "John";
-    _lastNameController.text = "Doe";
-    _phoneController.text = "+1 234-567-8900";
-    _emailController.text = "john.doe@example.com";
+  void _loadUserData() async {
+    final user = AppStorage.getUser();
+    if (user != null) {
+      setState(() {
+        _firstNameController.text = user.firstName;
+        _lastNameController.text = user.lastName;
+        _phoneController.text = user.phone;
+        _emailController.text = user.email;
+        _isLoading = false;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No user data found. Please sign up first.')),
+      );
+      _isLoading = false;
+    }
   }
 
   @override
@@ -40,43 +53,45 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            _buildEditableField(
-              controller: _firstNameController,
-              label: 'First Name',
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _lastNameController,
-              label: 'Last Name',
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _phoneController,
-              label: 'Phone Number',
-              keyboardType: TextInputType.phone,
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _emailController,
-              label: 'Email',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _saveProfile,
-              child: Text('Save Changes'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF1B5E20),
-                padding: EdgeInsets.symmetric(vertical: 15),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: EdgeInsets.all(16),
+              child: ListView(
+                children: [
+                  _buildEditableField(
+                    controller: _firstNameController,
+                    label: 'First Name',
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _lastNameController,
+                    label: 'Last Name',
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _phoneController,
+                    label: 'Phone Number',
+                    keyboardType: TextInputType.phone,
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _emailController,
+                    label: 'Email',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: _saveProfile,
+                    child: Text('Save Changes'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF1B5E20),
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -102,10 +117,25 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  void _saveProfile() {
-    // Save profile logic would go here
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Profile saved successfully!')),
-    );
+  void _saveProfile() async {
+    final user = AppStorage.getUser();
+    if (user != null) {
+      // Update user object
+      user.firstName = _firstNameController.text;
+      user.lastName = _lastNameController.text;
+      user.phone = _phoneController.text;
+      user.email = _emailController.text;
+
+      // Save back to storage
+      await AppStorage.saveUser(user);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Profile saved successfully!')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No user found. Cannot save profile.')),
+      );
+    }
   }
 }

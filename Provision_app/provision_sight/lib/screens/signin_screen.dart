@@ -55,7 +55,7 @@ class _LoginPageState extends State<LoginPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/logo.png',
+              'assets/logo.jpeg',
               height: 120,
               width: 120,
             ),

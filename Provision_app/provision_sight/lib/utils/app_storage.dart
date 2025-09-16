@@ -13,6 +13,17 @@ class AppStorage {
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
   }
+  // Add these to AppStorage.dart
+
+static final String _fingerprintEnrolledKey = 'provision_fingerprint_enrolled';
+
+static Future<void> saveFingerprintEnrolled(bool enrolled) async {
+  await _prefs.setBool(_fingerprintEnrolledKey, enrolled);
+}
+
+static bool isFingerprintEnrolled() {
+  return _prefs.getBool(_fingerprintEnrolledKey) ?? false;
+}
 
   // User data methods
   static Future<void> saveUser(User user) async {

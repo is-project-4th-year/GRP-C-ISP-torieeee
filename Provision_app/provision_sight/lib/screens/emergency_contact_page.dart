@@ -1,5 +1,7 @@
 // screens/emergency_contact_page.dart
 import 'package:flutter/material.dart';
+import 'package:provision_sight/utils/app_storage.dart';
+import 'package:provision_sight/models/UserModel.dart';
 
 class EmergencyContactPage extends StatefulWidget {
   @override
@@ -12,19 +14,30 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _relationshipController = TextEditingController();
 
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    // Load emergency contact data (in a real app, this would come from a database)
     _loadEmergencyContactData();
   }
 
-  void _loadEmergencyContactData() {
-    // Placeholder for loading emergency contact data
-    _nameController.text = "Jane Smith";
-    _phoneController.text = "+1 987-654-3210";
-    _emailController.text = "jane.smith@example.com";
-    _relationshipController.text = "Spouse";
+  void _loadEmergencyContactData() async {
+    final contact = AppStorage.getEmergencyContact();
+    if (contact != null) {
+      setState(() {
+        _nameController.text = contact.name;
+        _phoneController.text = contact.phone;
+        _emailController.text = contact.email;
+        _relationshipController.text = contact.relationship;
+        _isLoading = false;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No emergency contact found. Please set one up.')),
+      );
+      _isLoading = false;
+    }
   }
 
   @override
@@ -40,52 +53,54 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            _buildEditableField(
-              controller: _nameController,
-              label: 'Contact Name',
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _phoneController,
-              label: 'Phone Number',
-              keyboardType: TextInputType.phone,
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _emailController,
-              label: 'Email',
-              keyboardType: TextInputType.emailAddress,
-            ),
-            SizedBox(height: 16),
-            _buildEditableField(
-              controller: _relationshipController,
-              label: 'Relationship',
-            ),
-            SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _testEmergencyCall,
-              child: Text('Test Emergency Call'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                padding: EdgeInsets.symmetric(vertical: 15),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: EdgeInsets.all(16),
+              child: ListView(
+                children: [
+                  _buildEditableField(
+                    controller: _nameController,
+                    label: 'Contact Name',
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _phoneController,
+                    label: 'Phone Number',
+                    keyboardType: TextInputType.phone,
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _emailController,
+                    label: 'Email',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  SizedBox(height: 16),
+                  _buildEditableField(
+                    controller: _relationshipController,
+                    label: 'Relationship',
+                  ),
+                  SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: _testEmergencyCall,
+                    child: Text('Test Emergency Call'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                    ),
+                  ),
+                  SizedBox(height: 15),
+                  ElevatedButton(
+                    onPressed: _saveEmergencyContact,
+                    child: Text('Save Changes'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF1B5E20),
+                      padding: EdgeInsets.symmetric(vertical: 15),
+                    ),
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 15),
-            ElevatedButton(
-              onPressed: _saveEmergencyContact,
-              child: Text('Save Changes'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF1B5E20),
-                padding: EdgeInsets.symmetric(vertical: 15),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -111,8 +126,16 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
     );
   }
 
-  void _saveEmergencyContact() {
-    // Save emergency contact logic would go here
+  void _saveEmergencyContact() async {
+    final contact = EmergencyContact(
+      name: _nameController.text,
+      phone: _phoneController.text,
+      email: _emailController.text,
+      relationship: _relationshipController.text,
+    );
+
+    await AppStorage.saveEmergencyContact(contact);
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Emergency contact saved successfully!')),
     );

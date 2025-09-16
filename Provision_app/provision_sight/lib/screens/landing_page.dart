@@ -1,7 +1,52 @@
 // screens/landing_page.dart
 import 'package:flutter/material.dart';
+import 'package:provision_sight/utils/voice_navigator.dart';
 
-class LandingPage extends StatelessWidget {
+class LandingPage extends StatefulWidget {
+  @override
+  _LandingPageState createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  late VoiceNavigator _voiceNav;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceNav = VoiceNavigator();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startVoiceGuidance();
+    });
+  }
+
+  @override
+  void dispose() {
+    _voiceNav.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startVoiceGuidance() async {
+    await Future.delayed(Duration(seconds: 1)); // Let UI settle
+    await _voiceNav.speak("Welcome to Provision. Would you like to sign in or sign up? Say 'sign in' or 'sign up'.");
+    
+    final command = await _voiceNav.listenForCommand();
+    _handleVoiceCommand(command);
+  }
+
+  void _handleVoiceCommand(String command) {
+    command = command.toLowerCase();
+    if (command.contains("sign up") || command.contains("signup")) {
+      Navigator.pushNamed(context, '/signup');
+    } else if (command.contains("sign in") || command.contains("signin")) {
+      Navigator.pushNamed(context, '/login');
+    } else if (command == "cancel") {
+      _voiceNav.speak("Okay, you can use the buttons below.");
+    } else {
+      _voiceNav.speak("I didn't understand. Please say 'sign in' or 'sign up'.");
+      _startVoiceGuidance(); // Retry
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,7 +72,7 @@ class LandingPage extends StatelessWidget {
               ),
               SizedBox(height: 40),
               Image.asset(
-                'assets/logo.png', // You'll need to add a logo asset
+                'assets/logo.jpeg',
                 height: 150,
                 width: 150,
               ),

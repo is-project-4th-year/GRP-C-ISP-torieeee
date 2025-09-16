@@ -13,29 +13,45 @@ import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // ➡️ Initialize AppStorage ONCE — BEFORE everything else
+  try {
+    await AppStorage.initialize();
+    print('✅ AppStorage initialized successfully');
+  } catch (e) {
+    print('❌ Failed to initialize AppStorage: $e');
+    // You may want to show a dialog or exit gracefully in production
+    rethrow; // For now, let it crash during dev so you notice it
+  }
+
   // Request necessary permissions
   await _requestPermissions();
-  
+
   // Initialize voice services
   try {
     await VoiceService.initialize();
+    print('✅ VoiceService initialized successfully');
   } catch (e) {
-    print('Voice service initialization failed: $e');
+    print('⚠️ Voice service initialization failed: $e');
+    // Not critical — app can still work with manual input
   }
-  
-  // Initialize app storage
-  await AppStorage.initialize();
-  
+
   runApp(ProvisionApp());
 }
 
 Future<void> _requestPermissions() async {
-  await Permission.camera.request();
-  await Permission.microphone.request();
-  await Permission.location.request();
-  await Permission.storage.request();
-  await Permission.contacts.request();
+  final permissions = [
+    Permission.camera,
+    Permission.microphone,
+    Permission.location,
+    Permission.storage,
+    Permission.contacts,
+  ];
+
+  for (final permission in permissions) {
+    final status = await permission.request();
+    print('.Permission ${permission.toString().split('.').last}: $status');
+  }
 }
 
 class ProvisionApp extends StatelessWidget {

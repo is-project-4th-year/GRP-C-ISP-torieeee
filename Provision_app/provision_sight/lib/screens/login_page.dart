@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:provision_sight/utils/voice_auth.dart';
+import 'package:provision_sight/utils/app_storage.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -45,7 +46,7 @@ class _LoginPageState extends State<LoginPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/logo.png',
+              'assets/logo.jpeg',
               height: 120,
               width: 120,
             ),
@@ -69,7 +70,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
             SizedBox(height: 20),
-            if (_useFingerprint) ...[
+            if (_useFingerprint && AppStorage.isFingerprintEnrolled()) ...[
               Text(
                 'or',
                 style: TextStyle(color: Colors.white54),
@@ -98,29 +99,61 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Future<void> _authenticateWithVoice() async {
-    setState(() {
-      _isAuthenticating = true;
-    });
+  // REPLACE your current _authenticateWithVoice with this:
 
-    // Simulate voice authentication
-    await Future.delayed(Duration(seconds: 2));
-    
-    // For demo purposes, we'll assume success after 2 seconds
-    final bool isAuthenticated = true; // Replace with actual voice auth logic
-    
+Future<void> _authenticateWithVoice() async {
+  setState(() {
+    _isAuthenticating = true;
+  });
+
+  try {
+    // 1. Load saved user and voice samples
+    final user = AppStorage.getUser();
+    final storedSamples = AppStorage.getVoiceSamples();
+
+    if (user == null || storedSamples.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No user or voice samples found. Please sign up first.')),
+      );
+      setState(() => _attempts++);
+      return;
+    }
+
+    // 2. Verify user actually says "Provision"
+    final saidProvision = await VoiceAuth.verifyPhrase("Provision");
+    if (!saidProvision) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You must say "Provision" clearly')),
+      );
+      setState(() => _attempts++);
+      return;
+    }
+
+    // 3. Record and compare voice sample
+    final isAuthenticated = await VoiceAuth.authenticate(storedSamples);
+
+    if (isAuthenticated) {
+      // ✅ Success — go to main page
+      Navigator.pushReplacementNamed(context, '/main');
+    } else {
+      // ❌ Failed match
+      setState(() => _attempts++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Voice not recognized. Please try again.')),
+      );
+    }
+  } catch (e) {
+    print('Voice auth error: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Authentication error: $e')),
+    );
+    setState(() => _attempts++);
+  } finally {
     setState(() {
       _isAuthenticating = false;
     });
-
-    if (isAuthenticated) {
-      Navigator.pushReplacementNamed(context, '/main');
-    } else {
-      setState(() {
-        _attempts++;
-      });
-    }
   }
+}
 
   Future<void> _authenticateWithFingerprint() async {
     try {

@@ -1,8 +1,9 @@
-// services/voice_service.dart
+// lib/services/voice_service.dart
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:record/record.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -15,19 +16,21 @@ class VoiceService {
   static Function(String)? onResult;
   
   static Future<void> initialize() async {
-    // Request microphone permission
+    // Request permissions
     await Permission.microphone.request();
+    await Permission.storage.request();
     
-    // Initialize text-to-speech
+    // Initialize TTS
     await tts.setLanguage("en-US");
     await tts.setSpeechRate(0.5);
     await tts.setVolume(1.0);
     await tts.setPitch(1.0);
+    await tts.awaitSpeakCompletion(true); // ⬅️ Important: wait for speech to finish
     
-    // Initialize speech-to-text
+    // Initialize STT
     bool available = await speechToText.initialize(
-      onStatus: (status) => print('Speech status: $status'),
-      onError: (error) => print('Speech error: $error'),
+      onStatus: (status) => print('🎙️ Speech status: $status'),
+      onError: (error) => print('❌ Speech error: $error'),
     );
     
     if (!available) {
@@ -36,8 +39,8 @@ class VoiceService {
   }
   
   static Future<void> speak(String text) async {
+    if (text.isEmpty) return;
     await tts.speak(text);
-    await tts.awaitSpeakCompletion(true);
   }
   
   static Future<void> startListening(Function(String) onResultCallback) async {
@@ -46,16 +49,15 @@ class VoiceService {
     onResult = onResultCallback;
     isListening = true;
     
-    // Start listening for speech
     await speechToText.listen(
       onResult: (result) {
-        if (result.finalResult && onResult != null) {
+        if (result.finalResult && onResult != null && !result.recognizedWords.trim().isEmpty) {
           onResult!(result.recognizedWords.toLowerCase());
         }
       },
       listenFor: const Duration(seconds: 10),
-      pauseFor: const Duration(seconds: 5),
-      partialResults: true,
+      pauseFor: const Duration(seconds: 3),
+      partialResults: false, // ⬅️ Only final results
       localeId: 'en_US',
       cancelOnError: true,
       listenMode: stt.ListenMode.confirmation,
@@ -63,7 +65,9 @@ class VoiceService {
   }
   
   static Future<void> stopListening() async {
-    await speechToText.stop();
+    if (speechToText.isListening) {
+      await speechToText.stop();
+    }
     isListening = false;
   }
   
@@ -71,30 +75,28 @@ class VoiceService {
     final dir = await getApplicationDocumentsDirectory();
     final path = '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
     
-    // Check and request permission
-    if (await Permission.microphone.request().isGranted) {
-      await audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-        ),
-        path: path,
-      );
-      
-      await Future.delayed(duration);
-      final recording = await audioRecorder.stop();
-      
-      return recording ?? path;
+    if (!(await Permission.microphone.request().isGranted)) {
+      return '';
     }
     
-    return '';
+    await audioRecorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+      ),
+      path: path,
+    );
+    
+    await Future.delayed(duration);
+    final recording = await audioRecorder.stop();
+    
+    return recording ?? path;
   }
   
   static Future<List<String>> recordVoiceSamples(int count) async {
     List<String> samples = [];
     final dir = await getApplicationDocumentsDirectory();
     
-    // Check and request permission
     if (!(await Permission.microphone.request().isGranted)) {
       return samples;
     }
@@ -110,7 +112,6 @@ class VoiceService {
         path: path,
       );
       
-      // Record for 2 seconds
       await Future.delayed(const Duration(seconds: 2));
       final recording = await audioRecorder.stop();
       
@@ -118,7 +119,6 @@ class VoiceService {
         samples.add(recording);
       }
       
-      // Wait before next recording
       if (i < count - 1) {
         await Future.delayed(const Duration(seconds: 1));
       }
@@ -131,13 +131,10 @@ class VoiceService {
     try {
       final sampleFile = File(samplePath);
       if (!await sampleFile.exists()) return false;
-      
       final sampleSize = await sampleFile.length();
-      
-      // Basic validation - check if file has reasonable size
-      return sampleSize > 10000; // At least 10KB
+      return sampleSize > 10000;
     } catch (e) {
-      print('Voice verification error: $e');
+      print('❌ Voice verification error: $e');
       return false;
     }
   }
